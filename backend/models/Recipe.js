@@ -60,6 +60,12 @@ const recipeSchema = new mongoose.Schema(
         tags: {
             type: [String],
             default: []
+        },
+
+        createdBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+            default: null
         }
     },
     {

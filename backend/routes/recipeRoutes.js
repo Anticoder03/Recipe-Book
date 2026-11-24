@@ -1,27 +1,36 @@
 const express = require("express");
-const router = express.Router();
 
 const {
     createRecipe,
+    createRecipesBulk,
     getRecipes,
     getRecipeById,
     updateRecipe,
     deleteRecipe
 } = require("../controllers/recipeController");
+const { protect } = require("../middleware/auth");
+const { bulkLimiter } = require("../middleware/rateLimiter");
+const {
+    createRecipeValidation,
+    updateRecipeValidation,
+    bulkRecipeValidation,
+    idValidation,
+    validate
+} = require("../middleware/validate");
 
-// Create recipe
-router.post("/", createRecipe);
+const router = express.Router();
 
-// Get all recipes
+// /bulk must be registered before /:id so "bulk" is not treated as an ObjectId.
+router.post("/bulk", protect, bulkLimiter, ...bulkRecipeValidation, validate, createRecipesBulk);
+
+router.post("/", protect, ...createRecipeValidation, validate, createRecipe);
+
 router.get("/", getRecipes);
 
-// Get single recipe
-router.get("/:id", getRecipeById);
+router.get("/:id", ...idValidation, validate, getRecipeById);
 
-// Update recipe
-router.put("/:id", updateRecipe);
+router.put("/:id", protect, ...idValidation, ...updateRecipeValidation, validate, updateRecipe);
 
-// Delete recipe
-router.delete("/:id", deleteRecipe);
+router.delete("/:id", protect, ...idValidation, validate, deleteRecipe);
 
 module.exports = router;
