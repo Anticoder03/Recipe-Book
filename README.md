@@ -2,7 +2,7 @@
 
 A full-stack recipe application. The repository contains a hardened Express + MongoDB REST API with user authentication (`backend/`) and a Vite + React frontend (`frontend/`).
 
-> **Current status:** the backend is feature-complete for users and recipes, including signup/login, bulk recipe creation, and layered security protections. The frontend is still the default Vite/React starter screen and is **not yet connected** to the API. See [Roadmap](#roadmap).
+> **Current status:** the backend is feature-complete for users and recipes, including signup/login, bulk recipe creation, and layered security protections. The frontend is a connected React app with public browsing, authenticated recipe CRUD, bulk import, and a full cook's-notebook visual system. Known follow-ups are tracked in [`plans/`](plans/README.md).
 
 ## Table of contents
 
@@ -17,6 +17,8 @@ A full-stack recipe application. The repository contains a hardened Express + Mo
 - [Security measures](#security-measures)
 - [Data model](#data-model)
 - [Design tokens](#design-tokens)
+- [Frontend architecture](#frontend-architecture)
+- [Improvement plans](#improvement-plans)
 - [Roadmap](#roadmap)
 - [Repository notes](#repository-notes)
 
@@ -35,12 +37,13 @@ A full-stack recipe application. The repository contains a hardened Express + Mo
 
 **Frontend**
 
-- React 19
+- React 19 with `StrictMode`
 - Vite 8
-- React Router DOM 7 (installed, not used yet)
-- Axios (installed, not used yet)
-- Lucide React (installed)
-- ESLint 10
+- React Router DOM 7 (public, protected, and 404 routes)
+- Axios with a Bearer-token request interceptor
+- Lucide React icons
+- ESLint 10 with the React Hooks and React Refresh plugins
+- Newsreader + Karla from Google Fonts, with ruled-paper styling in plain CSS
 
 ## Project structure
 
@@ -68,16 +71,25 @@ Recipe Book/
 │   ├── .env.example                   # Safe configuration template
 │   └── package.json
 ├── frontend/
-│   ├── public/                        # favicon and icon sprite
+│   ├── public/
+│   │   ├── favicon.svg                # Notebook brand mark
+│   │   └── home-background.jpg        # Full-page home background photo
 │   ├── src/
-│   │   ├── assets/                    # hero and logo images
-│   │   ├── App.css
-│   │   ├── App.jsx                    # Current starter UI
-│   │   ├── index.css
-│   │   └── main.jsx                   # React entry point
+│   │   ├── api/client.js              # Axios instance + Bearer interceptor
+│   │   ├── auth/                      # Auth context, provider, and hook
+│   │   ├── components/                # Shell, forms, cards, toasts, guards
+│   │   ├── pages/                     # Home, collection, detail, forms, auth, bulk
+│   │   ├── utils/errors.js            # API error normalization + date format
+│   │   ├── App.jsx                    # Routes
+│   │   ├── index.css                  # Notebook design system
+│   │   └── main.jsx                   # Providers + React entry point
+│   ├── .env.example                   # VITE_API_URL template
 │   ├── index.html
 │   ├── vite.config.js
 │   └── package.json
+├── design-system/
+│   └── recipe-book/                   # Persisted ui-ux-pro-max design tokens
+├── plans/                             # Read-only React Doctor improvement plans
 ├── progress/
 │   └── 2026-11-24.md                  # Daily progress log
 ├── color-scheme.css                   # Root color variables
@@ -121,7 +133,7 @@ NODE_ENV=development
 MONGO_URI=mongodb://127.0.0.1:27017/recipe-book
 JWT_SECRET=<your-long-random-secret>
 JWT_EXPIRES_IN=7d
-CLIENT_ORIGIN=http://localhost:5173
+CLIENT_ORIGIN=http://localhost:5173,http://192.168.56.1
 TRUST_PROXY=0
 ```
 
@@ -152,7 +164,11 @@ npm install
 npm run dev
 ```
 
-Vite prints the local URL (usually `http://localhost:5173`). That origin is allowed by CORS by default. The frontend is not connected to the API yet, so no proxy is configured.
+Vite prints the local URL. Open **`http://localhost:5173`** — the backend's `CLIENT_ORIGIN` allows that origin and `http://192.168.56.1`. Set `VITE_API_URL` in `frontend/.env` only if the API is not at `http://localhost:5000/api`. If you open Vite from another device on the LAN at a URL with a port (for example `http://192.168.56.1:5173`), add that exact origin too — CORS compares origins exactly, including the port.
+
+```bash
+copy .env.example .env        # optional; default URL works locally
+```
 
 ## Environment variables
 
@@ -165,10 +181,16 @@ Environment variables are loaded from `backend/.env` by `backend/config/env.js`.
 | `MONGO_URI`       | Yes      | —                          | MongoDB connection string used by Mongoose                         |
 | `JWT_SECRET`      | Yes      | —                          | Secret used to sign JWTs; generate a long random value             |
 | `JWT_EXPIRES_IN`  | No       | `7d`                       | Token lifetime accepted by `jsonwebtoken`                          |
-| `CLIENT_ORIGIN`   | No       | `http://localhost:5173`    | Comma-separated browser origins allowed by CORS                    |
+| `CLIENT_ORIGIN`   | No       | `http://localhost:5173,http://192.168.56.1` | Comma-separated browser origins allowed by CORS (trailing slashes ignored) |
 | `TRUST_PROXY`     | No       | `0`                        | Set to `1` only when running behind a trusted reverse proxy        |
 
-`.env` files are ignored by Git. Never commit real credentials; only `.env.example` is tracked.
+**Frontend** (`frontend/.env`, loaded by Vite):
+
+| Variable       | Required | Default                       | Description                                  |
+| -------------- | -------- | ----------------------------- | -------------------------------------------- |
+| `VITE_API_URL` | No       | `http://localhost:5000/api`   | API base URL used by the Axios client        |
+
+`.env` files are ignored by Git. Never commit real credentials; only `.env.example` is tracked. Vite only exposes variables prefixed with `VITE_` to the browser, so never put secrets there.
 
 ## Available scripts
 
@@ -279,8 +301,8 @@ Missing or invalid tokens return `401`.
 | `POST`   | `/api/recipes/bulk`   | Yes           | Create 1–100 recipes in one request          | `201`   |
 | `GET`    | `/api/recipes`        | No            | List all recipes, newest first               | `200`   |
 | `GET`    | `/api/recipes/:id`    | No            | Get one recipe by MongoDB ObjectId           | `200`   |
-| `PUT`    | `/api/recipes/:id`    | Yes           | Update a recipe (partial updates allowed)    | `200`   |
-| `DELETE` | `/api/recipes/:id`    | Yes           | Delete a recipe                              | `200`   |
+| `PUT`    | `/api/recipes/:id`    | Yes (creator) | Update a recipe you created (partial updates) | `200`   |
+| `DELETE` | `/api/recipes/:id`    | Yes (creator) | Delete a recipe you created                  | `200`   |
 
 #### Create one recipe
 
@@ -353,7 +375,7 @@ The `recipes` array must contain between 1 and 100 items. Each item follows the 
 }
 ```
 
-`DELETE /api/recipes/:id` returns `200` with `"Recipe deleted successfully"`. Update and delete require the Bearer token.
+`DELETE /api/recipes/:id` returns `200` with `"Recipe deleted successfully"`. Both operations require the Bearer token and are **creator-only**: the server compares the recipe's `createdBy` with the authenticated user. Non-creators (and recipes with no `createdBy`) receive `403` — `"You can only edit recipes you created"` for `PUT` and `"You can only delete recipes you created"` for `DELETE`. The Edit and Delete controls are hidden from non-creators in the UI, and the edit form refuses to open someone else's recipe; the server checks are the actual enforcement.
 
 ### Validation and error responses
 
@@ -375,7 +397,7 @@ Other common responses:
 | ------ | -------------------------------------------------- |
 | `400`  | Validation failure, malformed JSON, or invalid ID  |
 | `401`  | Missing/invalid token or invalid credentials       |
-| `403`  | Origin blocked by CORS                             |
+| `403`  | Origin blocked by CORS, or editing/deleting a recipe you did not create |
 | `404`  | Route or recipe not found                          |
 | `409`  | Duplicate email                                    |
 | `413`  | Request body larger than 1 MB                      |
@@ -389,7 +411,7 @@ The backend applies defense in depth against common web attacks:
 1. **Password hashing** — `bcryptjs` with 12 salt rounds; plain passwords are never stored or returned.
 2. **JWT authentication** — HS256 is pinned on both sign and verify, expiry is enforced, and the user is reloaded from MongoDB on each protected request.
 3. **Rate limiting** — 100 requests/15 min globally on `/api`, 10 auth attempts/15 min on signup/login, and 5 bulk requests/hour.
-4. **CORS allowlist** — only origins listed in `CLIENT_ORIGIN` (default `http://localhost:5173`) may call the API from a browser; disallowed origins receive `403`.
+4. **CORS allowlist** — only origins listed in `CLIENT_ORIGIN` (default `http://localhost:5173,http://192.168.56.1`) may call the API from a browser; disallowed origins receive `403`. Trailing slashes are normalized, but the scheme, host, and port must match exactly.
 5. **Security headers** — `helmet()` sets protective HTTP headers and `x-powered-by` is disabled.
 6. **NoSQL injection prevention** — `express-mongo-sanitize` converts operator keys such as `$ne` and `$where` into `_ne` / `_where` in body and params before they reach Mongoose.
 7. **HTTP parameter pollution** — `hpp()` collapses duplicate non-whitelisted parameters; `ingredients`, `steps`, `tags`, and `recipes` are whitelisted so legitimate arrays still work.
@@ -400,6 +422,7 @@ The backend applies defense in depth against common web attacks:
 12. **Safe errors** — stack traces are logged server-side only; production clients receive a generic `500` message. Login uses a generic failure message.
 13. **Unique account emails** — the `User` schema enforces uniqueness and duplicate races return `409`.
 14. **Secret hygiene** — `.env` is Git-ignored; `.env.example` contains only placeholders.
+15. **Update/delete ownership** — `PUT` and `DELETE /api/recipes/:id` both look up the recipe and only proceed when `createdBy` matches the authenticated user's `_id`; otherwise they return `403`.
 
 ## Data model
 
@@ -430,29 +453,40 @@ Note: the schema has an `image` field and the server exposes `/uploads` as a sta
 
 ## Design tokens
 
-`color-scheme.css` defines the palette intended for the UI:
+`color-scheme.css` defines the original palette; the frontend reuses its ink-and-sage values as CSS custom properties in `frontend/src/index.css`:
 
-| Variable           | Value     |
-| ------------------ | --------- |
-| `--primary`        | `#588157` |
-| `--secondary`      | `#A3B18A` |
-| `--accent`         | `#DDA15E` |
-| `--background`     | `#F8F7F0` |
-| `--surface`        | `#FFFFFF` |
-| `--text-primary`   | `#344E41` |
-| `--text-secondary` | `#606C5D` |
+| Variable           | Value     | Frontend token  |
+| ------------------ | --------- | --------------- |
+| `--primary`        | `#588157` | `--sage`        |
+| `--secondary`      | `#A3B18A` | `--sage-light`  |
+| `--accent`         | `#DDA15E` | darker `--ochre` for readable text |
+| `--background`     | `#F8F7F0` | `--paper`       |
+| `--surface`        | `#FFFFFF` | `--surface`     |
+| `--text-primary`   | `#344E41` | `--ink`         |
+| `--text-secondary` | `#606C5D` | `--ink-soft`    |
 
-This file currently sits at the repository root and is not imported by the frontend.
+The visual direction is a cook's notebook: ruled paper, margin notes, editorial Newsreader headings, and Karla UI text. `design-system/recipe-book/MASTER.md`, `tokens.json`, and `tokens.css` were generated with the `ui-ux-pro-max` design-intelligence skill and kept as a reference. The home page uses `frontend/public/home-background.jpg` (Unsplash photo `photo-1498837167922-ddd27525d352`, Unsplash License) behind a paper wash.
+
+## Frontend architecture
+
+- **Routing** (`src/App.jsx`): `/`, `/recipes`, `/recipes/:id` are public. `/recipes/new`, `/recipes/:id/edit`, and `/bulk` sit behind `ProtectedRoute`. `/login` and `/signup` use the same `AuthPage` component with a `mode` prop; `*` renders a not-found screen.
+- **Providers** (`src/main.jsx`): `BrowserRouter` → `AuthProvider` → `ToastProvider` → `App`.
+- **Auth** (`src/auth/`): `AuthProvider` stores `rb_token` and `rb_user` in `localStorage`, verifies a stored token with `GET /api/auth/me`, and exposes a memoized context value. See plan 001 for the recommended HttpOnly-cookie migration.
+- **API** (`src/api/client.js`): Axios with `VITE_API_URL` (default `http://localhost:5000/api`) and a Bearer interceptor. `src/utils/errors.js` normalizes express-validator and Mongoose error shapes for the accessible error summary.
+- **Screens**: home hero + recent recipes, searchable/taggable collection, recipe detail with an interactive ingredient checklist, create/edit form with repeatable ingredient and step rows, bulk JSON import, and auth screens.
+- **Styling**: `src/index.css` contains all `rb-*` component styles, responsive breakpoints at 1000/640/420px, `:focus-visible` states, and a `prefers-reduced-motion` block.
+
+## Improvement plans
+
+`plans/README.md` records the read-only `improve-react` audit. The React Doctor scan scored **64/100** with four warnings. Plans 001–004 cover cookie-based auth, checklist state reset, native mobile-nav links, and Intl formatter hoisting. No source edits were made by the audit itself.
 
 ## Roadmap
 
-- Build recipe list, detail, create, edit, and delete screens in React.
-- Connect the frontend to the API with Axios and configure a dev proxy or API base URL.
-- Store auth tokens using an `httpOnly` cookie instead of client-side JavaScript storage.
-- Import `color-scheme.css` tokens into the frontend styling.
+- Apply [plan 001](plans/001-cookie-based-auth.md): move the JWT to an HttpOnly cookie.
+- Apply [plans 002–004](plans/README.md) and re-run React Doctor to raise the score above 64.
+- Add an error boundary and consider splitting the auth context (missed opportunities in `plans/README.md`).
 - Implement image upload with the already-installed `multer` and save the path to `image`.
 - Add automated tests for auth, validation, and recipe endpoints.
-- Add ownership checks so users can only modify their own recipes.
 
 ## Repository notes
 

@@ -14,9 +14,13 @@ if (missingVars.length > 0) {
     );
 }
 
-const clientOrigins = (process.env.CLIENT_ORIGIN || "http://localhost:5173")
+// Browser Origin headers never include a trailing slash, so normalize configured
+// values to match exactly (http://192.168.56.1/ becomes http://192.168.56.1).
+const clientOrigins = (
+    process.env.CLIENT_ORIGIN || "http://localhost:5173,http://192.168.56.1"
+)
     .split(",")
-    .map((origin) => origin.trim())
+    .map((origin) => origin.trim().replace(/\/+$/, ""))
     .filter(Boolean);
 
 module.exports = {

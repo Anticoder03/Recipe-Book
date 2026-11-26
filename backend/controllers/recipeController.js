@@ -18,6 +18,10 @@ const sendMongooseValidationError = (res, error) =>
         errors: Object.values(error.errors || {}).map((item) => item.message)
     });
 
+// A recipe without a createdBy (legacy data) belongs to nobody.
+const isRecipeOwner = (recipe, userId) =>
+    Boolean(recipe && recipe.createdBy && String(recipe.createdBy) === String(userId));
+
 // Create a single recipe (authenticated).
 exports.createRecipe = async (req, res, next) => {
     try {
@@ -112,7 +116,7 @@ exports.getRecipeById = async (req, res, next) => {
     }
 };
 
-// Update a recipe (authenticated). Only whitelisted fields can change.
+// Update a recipe (authenticated, creator only). Only whitelisted fields can change.
 exports.updateRecipe = async (req, res, next) => {
     try {
         const updates = pickFields(req.body, writableFields);
@@ -124,14 +128,7 @@ exports.updateRecipe = async (req, res, next) => {
             });
         }
 
-        const recipe = await Recipe.findByIdAndUpdate(
-            req.params.id,
-            updates,
-            {
-                new: true,
-                runValidators: true
-            }
-        );
+        const recipe = await Recipe.findById(req.params.id);
 
         if (!recipe) {
             return res.status(404).json({
@@ -139,6 +136,16 @@ exports.updateRecipe = async (req, res, next) => {
                 message: "Recipe not found"
             });
         }
+
+        if (!isRecipeOwner(recipe, req.user._id)) {
+            return res.status(403).json({
+                success: false,
+                message: "You can only edit recipes you created"
+            });
+        }
+
+        Object.assign(recipe, updates);
+        await recipe.save();
 
         res.status(200).json({
             success: true,
@@ -161,10 +168,10 @@ exports.updateRecipe = async (req, res, next) => {
     }
 };
 
-// Delete a recipe (authenticated).
+// Delete a recipe (authenticated, creator only).
 exports.deleteRecipe = async (req, res, next) => {
     try {
-        const recipe = await Recipe.findByIdAndDelete(req.params.id);
+        const recipe = await Recipe.findById(req.params.id);
 
         if (!recipe) {
             return res.status(404).json({
@@ -172,6 +179,15 @@ exports.deleteRecipe = async (req, res, next) => {
                 message: "Recipe not found"
             });
         }
+
+        if (!isRecipeOwner(recipe, req.user._id)) {
+            return res.status(403).json({
+                success: false,
+                message: "You can only delete recipes you created"
+            });
+        }
+
+        await recipe.deleteOne();
 
         res.status(200).json({
             success: true,
